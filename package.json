@@ -1,0 +1,9 @@
+
+{
+  "name": "shopaholics-united",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "build": "node scripts/build.js"
+  }
+}
