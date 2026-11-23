@@ -1,0 +1,97 @@
+
+name: Shopaholics CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm test
+
+  build:
+    name: Build and Upload
+    needs: test
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm run build
+
+      - name: Create ZIP
+        run: |
+          cd dist
+          zip -r ../build.zip .
+          cd ..
+
+      - name: AWS Login
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Upload Artifact to S3
+        run: |
+          aws s3 cp build.zip \
+          s3://${{ vars.ARTIFACT_BUCKET }}/builds/${GITHUB_SHA}/build.zip
+
+  deploy:
+    name: Deploy to Production
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: AWS Login
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Download Artifact from S3
+        run: |
+          aws s3 cp \
+          s3://${{ vars.ARTIFACT_BUCKET }}/builds/${GITHUB_SHA}/build.zip \
+          build.zip
+
+      - name: Extract Build
+        run: |
+          mkdir dist
+          unzip build.zip -d dist
+
+      - name: Deploy to Production S3
+        run: |
+          aws s3 sync dist/ \
+          s3://${{ vars.PRODUCTION_BUCKET }}/
+
+      - name: Verify Deployment
+        run: |
+          echo "Deployment completed successfully!"
+          aws s3 ls s3://${{ vars.PRODUCTION_BUCKET }}/
